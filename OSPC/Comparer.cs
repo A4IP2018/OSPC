@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.If not, see<http://www.gnu.org/licenses/>.
 
-// #define SINGLE_THREADED
+#define SINGLE_THREADED
 
 using OSPC.Tokenizer;
 using System;
@@ -24,6 +24,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+
 
 namespace OSPC
 {
@@ -43,7 +44,7 @@ namespace OSPC
 
         public override string ToString()
         {
-            return string.Format("# {0}: {1}", Index, string.Join(" ", TokensA.Select(t => t.Text)));
+            return string.Format("{0}", string.Join(" ", TokensA.Select(t => t.Text)));
         }
     }
 
@@ -107,6 +108,48 @@ namespace OSPC
             }
 
             
+            object _lock = new object();
+            var compareResult = new List<CompareResult>();
+            int counter = 0;
+            int max = compareList.Count;
+
+#if SINGLE_THREADED
+            foreach(var pair in compareList)
+#else
+            Parallel.ForEach(compareList, pair =>
+#endif
+            {
+                var r = this.Compare(pair.Item1, pair.Item2);
+
+                lock (_lock)
+                {
+                    compareResult.Add(r);
+                    _progress.Progress((double)++counter / (double)max);
+                }
+            }
+#if !SINGLE_THREADED
+            );
+#endif
+            _progress.End();
+
+            return compareResult;
+        }
+
+        public List<CompareResult> Compare(Submission[] givenFiles, Submission[] dirFiles)
+        {
+            _progress.Start();
+
+            var compareList = new List<Tuple<Submission, Submission>>();
+            for (int a = 0; a < givenFiles.Length; a++)
+            {
+                for (int b = 0; b < dirFiles.Length; b++)
+                {
+                    if (Path.GetExtension(givenFiles[a].FilePath) != Path.GetExtension(dirFiles[b].FilePath)) continue;
+                    compareList.Add(new Tuple<Submission, Submission>(givenFiles[a], dirFiles[b]));
+                }
+            }
+
+
             object _lock = new object();
             var compareResult = new List<CompareResult>();
             int counter = 0;

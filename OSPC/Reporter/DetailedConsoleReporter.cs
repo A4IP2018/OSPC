@@ -15,8 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.If not, see<http://www.gnu.org/licenses/>.
 
+using OSPC.Tokenizer;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -27,21 +29,91 @@ namespace OSPC.Reporter
     {
         public void Create(Configuration cfg, OSPCResult r)
         {
-            foreach (var result in r.Results.Take(10))
+            Console.WriteLine("{");
+            Console.WriteLine("    \"results\": [");
+            var resultCount = 0;
+            foreach (var result in r.Results)
             {
-                Console.WriteLine(result.A.FilePath);
-                Console.WriteLine(result.B.FilePath);
-                Console.WriteLine("----------------------------");
-                Console.WriteLine("Matches: {0}", result.MatchCount);
-                Console.WriteLine("Tokens: {0}", result.TokenCount);
-                Console.WriteLine("% A: {0:n2}", 100.0 * result.SimilarityA);
-                Console.WriteLine("% B: {0:n2}", 100.0 * result.SimilarityB);
-                foreach (var m in result.Matches)
+                var aReader = new StreamReader(result.A.FilePath);
+                var bReader = new StreamReader(result.B.FilePath);
+                var matchesA = GetMatchedStrings(result, aReader, m => m.TokensA);
+                var matchesB = GetMatchedStrings(result, bReader, m => m.TokensB);
+
+
+
+                Console.WriteLine("        {");
+                Console.WriteLine("            \"{0}\": \"{1}\",", "fileA", result.A.FilePath.Replace('\\', '/'));
+                Console.WriteLine("            \"{0}\": \"{1}\",", "fileB", result.B.FilePath.Replace('\\', '/'));
+                Console.WriteLine("            \"{0}\": {1},", "matchCount", result.MatchCount);
+                Console.WriteLine("            \"{0}\": {1},", "tokenCount", result.TokenCount);
+                Console.WriteLine("            \"{0}\": {1:n2},", "simmA", 100.0 * result.SimilarityA);
+                Console.WriteLine("            \"{0}\": {1:n2},", "simmB", 100.0 * result.SimilarityB);
+                Console.WriteLine("            \"{0}\": [{1}],", "matchesA", BuildArrayJson(matchesA));
+                Console.WriteLine("            \"{0}\": [{1}]", "matchesB", BuildArrayJson(matchesB));
+                if (resultCount == r.Results.Count - 1)
                 {
-                    Console.WriteLine("  !: " + m.ToString());
+                    Console.WriteLine("        }");
                 }
-                Console.WriteLine();
+                else
+                {
+                    Console.WriteLine("        },");
+                }
+                
+
+                /* BuildArrayJson(matchesA),
+                    "matchesB",
+                    BuildArrayJson(matchesB)*/
+                resultCount++;
             }
+            Console.WriteLine("    ]");
+            Console.WriteLine("}");
+        }
+
+
+        public List<Tuple<int, int>> GetMatchedStrings(CompareResult result, StreamReader rd, Func<Match, LinkedList<Token>> tokenExtractor)
+        {
+            List<Tuple<int, int>> resultList = new List<Tuple<int, int>>();
+            
+            var content = rd.ReadToEnd();
+            int idx = 0;
+            var currentMatch = result.Matches.OrderBy(m => tokenExtractor(m).First.Value.Start).ToList().GetEnumerator();
+            currentMatch.MoveNext();
+            while (idx < content.Length)
+            {
+                int start = currentMatch.Current != null ? tokenExtractor(currentMatch.Current).First.Value.Start : content.Length;
+                if (start > idx)
+                {
+                    // not in match
+                    idx = start;
+                }
+                else
+                {
+                    int end = tokenExtractor(currentMatch.Current).Last.Value.End;
+                    // in match
+                    resultList.Add(new Tuple<int, int>(idx, end - idx));
+                    currentMatch.MoveNext();
+                    idx = end;
+                }
+            }
+            return resultList;
+        }
+
+        public String BuildArrayJson(List<Tuple<int, int>> values)
+        {
+            String result = "";
+            var counter = 0;
+            foreach (var m in values)
+            {
+                result += "{";
+                result += string.Format("\"start\": {0}, \"length\": {1}", m.Item1, m.Item2);
+                result += "}";
+                if (counter < values.Count - 1)
+                {
+                    result += ",";
+                }
+                counter++;
+            }
+            return result;
         }
     }
 }
